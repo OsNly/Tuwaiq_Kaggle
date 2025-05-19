@@ -9,6 +9,12 @@ from xgboost import XGBClassifier
 from imblearn.pipeline import Pipeline as ImbPipeline
 from imblearn.over_sampling import SMOTE
 
+
+@st.cache_data
+def load_default_data():
+    url = "https://raw.githubusercontent.com/OsNly/Tuwaiq_Kaggle/refs/heads/main/test.csv"
+    return pd.read_csv(url)
+
 # App title
 st.set_page_config(page_title="Prediction App", layout="wide")
 
@@ -25,9 +31,11 @@ st.sidebar.header("Upload Your Test File")
 uploaded_file = st.sidebar.file_uploader("Choose a CSV file", type="csv")
 
 # === Automatically use default CSV if nothing uploaded ===
-if uploaded_file is None:
+if uploaded_file is not None:
+    df_original = pd.read_csv(uploaded_file)
+else:
     st.warning("You can make predicitons on 'test.csv' or upload a new file on the left side.")
-    uploaded_file = 'test.csv'
+    df_original = load_default_data()
 
 # === Utility Functions ===
 def clean_light(text):
@@ -70,62 +78,60 @@ def infer_college(speciality):
         return 'كلية أخرى'
 
 # === Main File Processing ===
-if uploaded_file:
-    df_original = pd.read_csv(uploaded_file) if isinstance(uploaded_file, str) else pd.read_csv(uploaded_file)
-    df = df_original.copy()
-    registration = pd.read_csv('registration.csv')
+df = df_original.copy()
+registration = pd.read_csv('registration.csv')
 
-    st.subheader("Uploaded Data Preview")
-    st.dataframe(df_original.head())
+st.subheader("Data Preview")
+st.dataframe(df_original.head())
 
-    df['Unified_Score_Percentage'] = (
-        (df['University Degree Score'] / df['University Degree Score System']) * 100).round(2)
+df['Unified_Score_Percentage'] = (
+    (df['University Degree Score'] / df['University Degree Score System']) * 100).round(2)
 
-    df.loc[df['College'].isna(), 'Education Speaciality'] = df.loc[df['College'].isna(), 'Education Speaciality'].apply(lambda x: cleantext(x))
-    df['College_Filled'] = df['College']
-    df.loc[df['College'].isna(), 'College_Filled'] = df.loc[df['College'].isna(), 'Education Speaciality'].apply(infer_college)
+df.loc[df['College'].isna(), 'Education Speaciality'] = df.loc[df['College'].isna(), 'Education Speaciality'].apply(lambda x: cleantext(x))
+df['College_Filled'] = df['College']
+df.loc[df['College'].isna(), 'College_Filled'] = df.loc[df['College'].isna(), 'Education Speaciality'].apply(infer_college)
 
-    df['Age'] = df['Age'].fillna(df['Age'].mean())
-    df['Program Sub Category Code'] = df['Program Sub Category Code'].fillna(df['Program Main Category Code'])
-    df['Program Skill Level'] = df['Program Skill Level'].fillna('غير معروف')
-    df['Level of Education'] = df['Level of Education'].fillna('غير معروف')
-    df['Employment Status'] = df['Employment Status'].fillna('غير معروف')
-    Percentage_mean = df['University Degree Score System'].mean()
-    df['Unified_Score_Percentage'] = df['Unified_Score_Percentage'].fillna(Percentage_mean)
-    df['Home City'] = df['Home City'].fillna(df['Home City'].mode()[0])
+df['Age'] = df['Age'].fillna(df['Age'].mean())
+df['Program Sub Category Code'] = df['Program Sub Category Code'].fillna(df['Program Main Category Code'])
+df['Program Skill Level'] = df['Program Skill Level'].fillna('غير معروف')
+df['Level of Education'] = df['Level of Education'].fillna('غير معروف')
+df['Employment Status'] = df['Employment Status'].fillna('غير معروف')
+Percentage_mean = df['University Degree Score System'].mean()
+df['Unified_Score_Percentage'] = df['Unified_Score_Percentage'].fillna(Percentage_mean)
+df['Home City'] = df['Home City'].fillna(df['Home City'].mode()[0])
 
-    df = df.merge(registration[['Student ID', 'Total Regestration']], on='Student ID', how='left')
+df = df.merge(registration[['Student ID', 'Total Regestration']], on='Student ID', how='left')
 
-    df = df.drop(columns=[
-        'Program Start Date', 'Program End Date',
-        'Technology Type', 'Education Speaciality', 'University Degree Score System',
-        'Job Type', 'Still Working', 'College', 'University Degree Score'
-    ], errors='ignore')
+df = df.drop(columns=[
+    'Program Start Date', 'Program End Date',
+    'Technology Type', 'Education Speaciality', 'University Degree Score System',
+    'Job Type', 'Still Working', 'College', 'University Degree Score'
+], errors='ignore')
 
-    for col in df.select_dtypes(include='object').columns:
-        if col in encoders:
-            known_labels = set(encoders[col].classes_)
-            df[col] = df[col].apply(lambda x: x if x in known_labels else 'unknown')
-            if 'unknown' not in encoders[col].classes_:
-                encoders[col].classes_ = np.append(encoders[col].classes_, 'unknown')
-            df[col] = encoders[col].transform(df[col])
+for col in df.select_dtypes(include='object').columns:
+    if col in encoders:
+        known_labels = set(encoders[col].classes_)
+        df[col] = df[col].apply(lambda x: x if x in known_labels else 'unknown')
+        if 'unknown' not in encoders[col].classes_:
+            encoders[col].classes_ = np.append(encoders[col].classes_, 'unknown')
+        df[col] = encoders[col].transform(df[col])
 
-    if st.button("Predict"):
-        try:
-            probs = model.predict_proba(df)[:, 1]
-            predictions = (probs > 0.47).astype(int)
+if st.button("Predict"):
+    try:
+        probs = model.predict_proba(df)[:, 1]
+        predictions = (probs > 0.47).astype(int)
 
-            df_result = df_original.copy()
-            df_result['Prediction'] = predictions
-            df_result['Probability_Not_Completed'] = probs
+        df_result = df_original.copy()
+        df_result['Prediction'] = predictions
+        df_result['Probability_Not_Completed'] = probs
 
-            st.subheader("Prediction Results")
-            st.dataframe(df_result)
+        st.subheader("Prediction Results")
+        st.dataframe(df_result)
 
-            csv = df_result.to_csv(index=False)
-            st.download_button("Download Results", csv, "predictions.csv", "text/csv")
-        except Exception as e:
-            st.error(f"Error: {e}")
+        csv = df_result.to_csv(index=False)
+        st.download_button("Download Results", csv, "predictions.csv", "text/csv")
+    except Exception as e:
+        st.error(f"Error: {e}")
 
 # === Manual Input Prediction Section ===
 st.markdown("## Or Manually Enter Values for Prediction")
@@ -256,10 +262,6 @@ with st.form("manual_input_form"):
                 "Unified_Score_Percentage": [unified_score],
                 "College_Filled": [college_filled],
                 "Total Regestration": [total_registration],
-                
-                
-                
-                
             }
 
             input_df = pd.DataFrame(input_dict)
