@@ -3,5 +3,5 @@ pandas
 numpy
 scikit-learn
 joblib
-xgboost
+xgboost==2.1.4
 imbalanced-learn
