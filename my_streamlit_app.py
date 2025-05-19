@@ -3,8 +3,11 @@ import streamlit as st
 import pandas as pd
 import joblib
 import re
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, StandardScaler
 import numpy as np
+from xgboost import XGBClassifier
+from imblearn.pipeline import Pipeline as ImbPipeline
+from imblearn.over_sampling import SMOTE
 
 # App title
 st.set_page_config(page_title="Prediction App", layout="wide")
